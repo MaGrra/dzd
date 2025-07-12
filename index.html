@@ -6,25 +6,26 @@
   <title>TV Scoreboard</title>
   <style>
     html, body {
-      margin:0; padding:0;
-      background:#0F1E3D; color:white;
-      font-family:'Segoe UI',sans-serif;
-      height:100vh; overflow:hidden; position:relative;
+      margin: 0; padding: 0;
+      background: #0F1E3D;
+      color: white;
+      font-family: 'Segoe UI', sans-serif;
+      height: 100vh; overflow: hidden; position: relative;
     }
     #title {
-      position:absolute; top:10px; width:100%;
-      text-align:center; font-size:3vw; font-weight:bold; z-index:10;
+      position: absolute; top: 10px; width: 100%;
+      text-align: center; font-size: 3vw; font-weight: bold; z-index: 10;
     }
     #chartContainer {
-      position:absolute; top:0; left:0; right:0; bottom:0;
-      display:flex; align-items:flex-end; justify-content:center;
-      padding:20px;
+      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      display: flex; align-items: flex-end; justify-content: center;
+      padding: 20px;
     }
-    canvas { width:100% !important; height:100% !important; }
+    canvas { width: 100% !important; height: 100% !important; }
     #build-badge {
-      position:absolute; bottom:5px; left:50%;
-      transform:translateX(-50%);
-      font-size:0.8em; color:rgba(255,255,255,0.6);
+      position: absolute; bottom: 5px; left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.8em; color: rgba(255,255,255,0.6);
     }
   </style>
 
@@ -37,26 +38,25 @@
 <body>
   <div id="title">Rezultāti</div>
   <div id="chartContainer"><canvas id="scoreChart"></canvas></div>
-  <div id="build-badge">Build #5</div>
+  <div id="build-badge">Build #6</div>
 
   <script>
-    // bump this on each deploy
-    const BUILD_NUMBER = 5;
+    // ─── Update this on every deploy ─────────────────────────
+    const BUILD_NUMBER = 6;
     document.getElementById('build-badge')
             .textContent = `Build #${BUILD_NUMBER}`;
 
-    // your published-sheet CSV URL
-    const csvUrl =
+    // ─── Your published CSV endpoint ────────────────────────
+    const csvUrl = 
       'https://docs.google.com/spreadsheets/d/e/' +
       '2PACX-1vRS-XeYhFEQcg4pkZ_cG1san3-uSVPyhCpIFMavJiC7pQCz6Rqlw-' +
       '4R0G7G6Ozvv_HLT4sQPd99sKM-/pub?output=csv&gid=0';
 
-    // chart settings
-    const refresh   = 5000; // 5s
-    const colors    = ['#FF5733','#33FF57','#3357FF','#F1C40F','#8E44AD','#16A085','#E67E22','#2C3E50','#D35400','#7F8C8D'];
-    const patterns  = ['line','dot','dash'];
+    const REFRESH_MS = 5000;
+    const COLORS    = ['#FF5733','#33FF57','#3357FF','#F1C40F','#8E44AD','#16A085','#E67E22','#2C3E50','#D35400','#7F8C8D'];
+    const PATTERNS  = ['line','dot','dash'];
 
-    // initialize Chart.js
+    // ─── Initialize Chart.js ──────────────────────────────
     const ctx = document.getElementById('scoreChart').getContext('2d');
     const chart = new Chart(ctx, {
       type: 'bar',
@@ -72,52 +72,54 @@
       }
     });
 
-    // fetch & render
+    // ─── Fetch CSV (as arrays!), parse & draw ─────────────
     function fetchAndDraw() {
       Papa.parse(csvUrl, {
         download: true,
-        header: true,
+        header: false,       // ← no header → get raw arrays
         dynamicTyping: true,
-        complete: ({ data, meta, errors }) => {
-          console.log('CSV parse errors:', errors);
-          console.log('CSV headers:', meta.fields);
-          console.log('CSV rows:', data.length);
+        complete: results => {
+          const rows       = results.data;
+          const headerRow  = rows[0] || [];
+          const dataRows   = rows.slice(1);
 
-          // locate columns
-          const nameCol  = meta.fields.indexOf('Komanda');
-          const scoreCol = meta.fields.indexOf('Vietu summa');
+          console.log('▶️ Total rows (incl. header):', rows.length);
+          console.log('▶️ Header columns:', headerRow);
 
-          // map rows
-          const rows = data.map((r,i) => {
-            // if headers valid, use direct
-            if (nameCol >=0 && scoreCol >=0) {
-              return { team: r['Komanda'], score: r['Vietu summa'] };
-            }
-            // fallback: array access
-            const arr = Object.values(r);
-            return { team: arr[1], score: parseFloat(arr[56])||0 };
-          })
-          .filter(r => r.team)
-          .map(r => ({
-            team: r.team.toString().trim(),
-            score: +r.score || 0
-          }))
-          .sort((a,b) => b.score - a.score);
+          // find the indexes by name (case-insensitive, substring)
+          const nameIdx  = headerRow.findIndex(h => typeof h==='string' && h.toLowerCase().includes('komanda'));
+          const scoreIdx = headerRow.findIndex(h => typeof h==='string' && h.toLowerCase().includes('vietu summa'));
 
-          // update chart
-          chart.data.labels = rows.map(r => r.team);
-          chart.data.datasets[0].data = rows.map(r => r.score);
-          chart.data.datasets[0].backgroundColor = rows.map((_,i) => {
-            const c = colors[i % colors.length];
-            return Chart.pattern.draw(patterns[i % patterns.length], c, 0.4);
+          console.log('▶️ Komanda col index:', nameIdx);
+          console.log('▶️ Vietu summa col index:', scoreIdx);
+
+          // map valid rows
+          const mapped = dataRows
+            .filter(r => r[nameIdx])    // must have a team name
+            .map(r => ({
+              team:  String(r[nameIdx]).trim(),
+              score: Number(r[scoreIdx]) || 0
+            }))
+            .sort((a,b) => b.score - a.score);
+
+          console.log('▶️ Parsed teams:', mapped);
+
+          // feed chart
+          chart.data.labels = mapped.map(d => d.team);
+          chart.data.datasets[0].data = mapped.map(d => d.score);
+          chart.data.datasets[0].backgroundColor = mapped.map((_,i) => {
+            const c = COLORS[i % COLORS.length];
+            return Chart.pattern.draw(PATTERNS[i % PATTERNS.length], c, 0.4);
           });
           chart.update();
-        }
+        },
+        error: err => console.error('PapaParse error:', err)
       });
     }
 
+    // initial + loop
     fetchAndDraw();
-    setInterval(fetchAndDraw, refresh);
+    setInterval(fetchAndDraw, REFRESH_MS);
   </script>
 </body>
 </html>
