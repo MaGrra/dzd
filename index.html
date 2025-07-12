@@ -40,6 +40,7 @@
   <!-- Pattern plugin (auto-registers itself) -->
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-pattern/dist/chartjs-plugin-pattern.min.js"></script>
 </head>
+
 <body>
   <div id="title">Rezultāti</div>
   <div id="chartContainer">
@@ -47,48 +48,69 @@
   </div>
 
   <script>
+    // → your sheet ID here:
     const sheetId = '1TNPAoSuSYJPP6nJJ2o_LQor6_Rl_z5rpHD1ETSSTDmA';
-    const sheetName = 'Sheet1';
-    const refreshInterval = 5000; // 5s
+    const refreshInterval = 5000;  // 5 seconds
 
-    const colors = ['#FF5733','#33FF57','#3357FF','#F1C40F','#8E44AD','#16A085','#E67E22','#2C3E50','#D35400','#7F8C8D'];
+    // festival-friendly palette + some patterns
+    const colors   = ['#FF5733','#33FF57','#3357FF','#F1C40F','#8E44AD','#16A085',
+                      '#E67E22','#2C3E50','#D35400','#7F8C8D'];
     const patterns = ['line','dot','dash'];
 
+    // build the chart
     const ctx = document.getElementById('scoreChart').getContext('2d');
     const scoreChart = new Chart(ctx, {
       type: 'bar',
       data: { labels: [], datasets: [{ data: [], backgroundColor: [] }] },
       options: {
         maintainAspectRatio: false,
-        animation: { duration: 1000, easing: 'easeInOutQuad' },
+        animation: { duration: 800, easing: 'easeInOutQuad' },
         scales: {
-          x: { ticks:{ color:'white', autoSkip:false }, grid:{ display:false } },
-          y: { beginAtZero:true, ticks:{ color:'white' }, grid:{ color:'rgba(255,255,255,0.2)' } }
+          x: { ticks:{ color:'white', autoSkip:false, maxRotation:0, minRotation:0 },
+               grid:{ display:false } },
+          y: { beginAtZero:true, ticks:{ color:'white' },
+               grid:{ color:'rgba(255,255,255,0.2)' } }
         },
-        plugins: { legend:{ display:false }, tooltip:{ enabled:false } }
+        plugins: {
+          legend:{ display:false },
+          tooltip:{ enabled:false }
+        }
       }
     });
 
+    // fetch & render
     async function updateChart() {
-      const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=${sheetName}`;
+      const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?` +
+                  `tqx=out:json&gid=0`;
       const res = await fetch(url);
       const txt = await res.text();
-      const json = JSON.parse(txt.substr(47).slice(0,-2));
-      let data = json.table.rows
-        .map(r => ({ team: r.c[1]?.v||'–', score: parseFloat(r.c[56]?.v)||0 }))
-        .filter(d => d.team)
-        .sort((a,b)=>b.score-a.score);
 
-      // draw bars
+      // strip Google’s JSONP wrapper
+      const json = JSON.parse(
+        txt.replace(/^[^\(]*\(/,'').replace(/\);\s*$/,'')
+      );
+      const rows = json.table.rows || [];
+
+      // pull team names (col B → index 1) and scores (col BE → index 56)
+      let data = rows.map(r => ({
+        team:  r.c[1]?.v || '–',
+        score: parseFloat(r.c[56]?.v) || 0
+      }))
+      // only non-empty teams, sorted descending
+      .filter(d => d.team)
+      .sort((a,b) => b.score - a.score);
+
+      // update chart data
       scoreChart.data.labels = data.map(d=>d.team);
       scoreChart.data.datasets[0].data = data.map(d=>d.score);
-      scoreChart.data.datasets[0].backgroundColor = data.map((_,i)=>{
-        const c = colors[i%colors.length];
-        return Chart.pattern.draw(patterns[i%patterns.length], c, 0.4);
+      scoreChart.data.datasets[0].backgroundColor = data.map((_,i) => {
+        const c = colors[i % colors.length];
+        return Chart.pattern.draw(patterns[i % patterns.length], c, 0.4);
       });
       scoreChart.update();
     }
 
+    // initial + interval
     updateChart();
     setInterval(updateChart, refreshInterval);
   </script>
