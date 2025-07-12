@@ -27,31 +27,36 @@
       font-size:0.8em; color:rgba(255,255,255,0.6);
     }
   </style>
+
   <!-- Chart.js + pattern plugin -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-pattern/dist/chartjs-plugin-pattern.min.js"></script>
-  <!-- Papa Parse for CSV -->
+  <!-- PapaParse for CSV -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
 </head>
 <body>
   <div id="title">Rezultāti</div>
   <div id="chartContainer"><canvas id="scoreChart"></canvas></div>
-  <div id="build-badge">Build #4</div>
+  <div id="build-badge">Build #5</div>
 
   <script>
-    // 👉 bump on each deploy
-    const BUILD_NUMBER = 4;
-    document.getElementById('build-badge').textContent = `Build #${BUILD_NUMBER}`;
+    // bump this on each deploy
+    const BUILD_NUMBER = 5;
+    document.getElementById('build-badge')
+            .textContent = `Build #${BUILD_NUMBER}`;
 
-    const sheetId = '1TNPAoSuSYJPP6nJJ2o_LQor6_Rl_z5rpHD1ETSSTDmA';
-    const gid     = '0';            // first tab
-    const refresh = 5000;           // ms
+    // your published-sheet CSV URL
+    const csvUrl =
+      'https://docs.google.com/spreadsheets/d/e/' +
+      '2PACX-1vRS-XeYhFEQcg4pkZ_cG1san3-uSVPyhCpIFMavJiC7pQCz6Rqlw-' +
+      '4R0G7G6Ozvv_HLT4sQPd99sKM-/pub?output=csv&gid=0';
 
-    // colors + patterns
-    const colors   = ['#FF5733','#33FF57','#3357FF','#F1C40F','#8E44AD','#16A085','#E67E22','#2C3E50','#D35400','#7F8C8D'];
-    const patterns = ['line','dot','dash'];
+    // chart settings
+    const refresh   = 5000; // 5s
+    const colors    = ['#FF5733','#33FF57','#3357FF','#F1C40F','#8E44AD','#16A085','#E67E22','#2C3E50','#D35400','#7F8C8D'];
+    const patterns  = ['line','dot','dash'];
 
-    // init Chart.js
+    // initialize Chart.js
     const ctx = document.getElementById('scoreChart').getContext('2d');
     const chart = new Chart(ctx, {
       type: 'bar',
@@ -60,36 +65,46 @@
         maintainAspectRatio: false,
         animation: { duration: 800, easing: 'easeInOutQuad' },
         scales: {
-          x: { ticks: { color:'white', autoSkip:false, maxRotation:0, minRotation:0 }, grid: { display:false } },
+          x: { ticks:{ color:'white', autoSkip:false, maxRotation:0, minRotation:0 }, grid:{ display:false } },
           y: { beginAtZero:true, ticks:{ color:'white' }, grid:{ color:'rgba(255,255,255,0.2)' } }
         },
-        plugins: {
-          legend: { display:false },
-          tooltip:{ enabled:false }
-        }
+        plugins: { legend:{ display:false }, tooltip:{ enabled:false } }
       }
     });
 
+    // fetch & render
     function fetchAndDraw() {
-      const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
       Papa.parse(csvUrl, {
         download: true,
-        header:   true,
+        header: true,
         dynamicTyping: true,
-        complete: ({ data, errors }) => {
-          if (errors.length) console.error('CSV parse errors:', errors);
+        complete: ({ data, meta, errors }) => {
+          console.log('CSV parse errors:', errors);
+          console.log('CSV headers:', meta.fields);
           console.log('CSV rows:', data.length);
 
-          // Map your columns: B → "Komanda", BE → "Vietu summa"
-          const rows = data
-            .map(r => ({
-              team:  r['Komanda']?.toString().trim(),
-              score: parseFloat(r['Vietu summa']) || 0
-            }))
-            .filter(r => r.team)
-            .sort((a,b) => b.score - a.score);
+          // locate columns
+          const nameCol  = meta.fields.indexOf('Komanda');
+          const scoreCol = meta.fields.indexOf('Vietu summa');
 
-          // Update chart
+          // map rows
+          const rows = data.map((r,i) => {
+            // if headers valid, use direct
+            if (nameCol >=0 && scoreCol >=0) {
+              return { team: r['Komanda'], score: r['Vietu summa'] };
+            }
+            // fallback: array access
+            const arr = Object.values(r);
+            return { team: arr[1], score: parseFloat(arr[56])||0 };
+          })
+          .filter(r => r.team)
+          .map(r => ({
+            team: r.team.toString().trim(),
+            score: +r.score || 0
+          }))
+          .sort((a,b) => b.score - a.score);
+
+          // update chart
           chart.data.labels = rows.map(r => r.team);
           chart.data.datasets[0].data = rows.map(r => r.score);
           chart.data.datasets[0].backgroundColor = rows.map((_,i) => {
@@ -101,7 +116,6 @@
       });
     }
 
-    // Initial and loop
     fetchAndDraw();
     setInterval(fetchAndDraw, refresh);
   </script>
