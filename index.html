@@ -7,8 +7,7 @@
   <style>
     html, body {
       margin:0; padding:0;
-      background:#0F1E3D;
-      color:white;
+      background:#0F1E3D; color:white;
       font-family:'Segoe UI',sans-serif;
       height:100vh; overflow:hidden; position:relative;
     }
@@ -17,87 +16,94 @@
       text-align:center; font-size:3vw; font-weight:bold; z-index:10;
     }
     #chartContainer {
-      position:absolute; top:0;left:0;right:0;bottom:0;
+      position:absolute; top:0; left:0; right:0; bottom:0;
       display:flex; align-items:flex-end; justify-content:center;
       padding:20px;
     }
-    canvas { width:100%!important; height:100%!important; }
+    canvas { width:100% !important; height:100% !important; }
     #build-badge {
       position:absolute; bottom:5px; left:50%;
       transform:translateX(-50%);
       font-size:0.8em; color:rgba(255,255,255,0.6);
     }
   </style>
+  <!-- Chart.js + pattern plugin -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-pattern/dist/chartjs-plugin-pattern.min.js"></script>
+  <!-- Papa Parse for CSV -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
 </head>
 <body>
   <div id="title">Rezultāti</div>
   <div id="chartContainer"><canvas id="scoreChart"></canvas></div>
-  <div id="build-badge">Build #3</div>
+  <div id="build-badge">Build #4</div>
 
   <script>
+    // 👉 bump on each deploy
+    const BUILD_NUMBER = 4;
+    document.getElementById('build-badge').textContent = `Build #${BUILD_NUMBER}`;
+
     const sheetId = '1TNPAoSuSYJPP6nJJ2o_LQor6_Rl_z5rpHD1ETSSTDmA';
-    const gid       = '0';
-    const refresh   = 5000; // ms
+    const gid     = '0';            // first tab
+    const refresh = 5000;           // ms
 
     // colors + patterns
     const colors   = ['#FF5733','#33FF57','#3357FF','#F1C40F','#8E44AD','#16A085','#E67E22','#2C3E50','#D35400','#7F8C8D'];
     const patterns = ['line','dot','dash'];
 
-    // build chart
+    // init Chart.js
     const ctx = document.getElementById('scoreChart').getContext('2d');
     const chart = new Chart(ctx, {
-      type:'bar',
-      data:{ labels:[], datasets:[{ data:[], backgroundColor:[] }] },
-      options:{
-        maintainAspectRatio:false,
-        animation:{ duration:800, easing:'easeInOutQuad' },
-        scales:{
-          x:{ ticks:{ color:'white', autoSkip:false, maxRotation:0, minRotation:0 }, grid:{ display:false } },
-          y:{ beginAtZero:true, ticks:{ color:'white' }, grid:{ color:'rgba(255,255,255,0.2)' } }
+      type: 'bar',
+      data: { labels: [], datasets: [{ data: [], backgroundColor: [] }] },
+      options: {
+        maintainAspectRatio: false,
+        animation: { duration: 800, easing: 'easeInOutQuad' },
+        scales: {
+          x: { ticks: { color:'white', autoSkip:false, maxRotation:0, minRotation:0 }, grid: { display:false } },
+          y: { beginAtZero:true, ticks:{ color:'white' }, grid:{ color:'rgba(255,255,255,0.2)' } }
         },
-        plugins:{ legend:{ display:false }, tooltip:{ enabled:false } }
+        plugins: {
+          legend: { display:false },
+          tooltip:{ enabled:false }
+        }
       }
     });
 
-    async function updateChart(){
-      try {
-        const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&gid=${gid}`;
-        const res = await fetch(url);
-        const txt = await res.text();
+    function fetchAndDraw() {
+      const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+      Papa.parse(csvUrl, {
+        download: true,
+        header:   true,
+        dynamicTyping: true,
+        complete: ({ data, errors }) => {
+          if (errors.length) console.error('CSV parse errors:', errors);
+          console.log('CSV rows:', data.length);
 
-        // robustly extract the {...} JSON blob
-        const jsonBlob = txt.slice(txt.indexOf('{'), txt.lastIndexOf('}')+1);
-        const obj = JSON.parse(jsonBlob);
-        const rows = (obj.table && obj.table.rows) || [];
-        console.log('▶️ Fetched rows:', rows.length);
+          // Map your columns: B → "Komanda", BE → "Vietu summa"
+          const rows = data
+            .map(r => ({
+              team:  r['Komanda']?.toString().trim(),
+              score: parseFloat(r['Vietu summa']) || 0
+            }))
+            .filter(r => r.team)
+            .sort((a,b) => b.score - a.score);
 
-        // map B→team, BE→score (index 1, index 56)
-        const data = rows
-          .map(r => ({
-            team:  r.c[1]?.v || '–',
-            score: parseFloat(r.c[56]?.v) || 0
-          }))
-          .filter(d=>d.team)
-          .sort((a,b)=>b.score-a.score);
-
-        // update chart
-        chart.data.labels = data.map(d=>d.team);
-        chart.data.datasets[0].data = data.map(d=>d.score);
-        chart.data.datasets[0].backgroundColor = data.map((_,i)=>{
-          const c = colors[i % colors.length];
-          return Chart.pattern.draw(patterns[i % patterns.length], c, 0.4);
-        });
-        chart.update();
-      } catch(err){
-        console.error('❌ updateChart error:', err);
-      }
+          // Update chart
+          chart.data.labels = rows.map(r => r.team);
+          chart.data.datasets[0].data = rows.map(r => r.score);
+          chart.data.datasets[0].backgroundColor = rows.map((_,i) => {
+            const c = colors[i % colors.length];
+            return Chart.pattern.draw(patterns[i % patterns.length], c, 0.4);
+          });
+          chart.update();
+        }
+      });
     }
 
-    // initial + loop
-    updateChart();
-    setInterval(updateChart, refresh);
+    // Initial and loop
+    fetchAndDraw();
+    setInterval(fetchAndDraw, refresh);
   </script>
 </body>
 </html>
